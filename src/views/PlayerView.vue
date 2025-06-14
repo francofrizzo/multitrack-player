@@ -1,57 +1,58 @@
 <script setup lang="ts">
 import LoadingScreen from "@/components/LoadingScreen.vue";
 import MultitrackPlayer from "@/components/MultitrackPlayer.vue";
-import { useSongsStore } from "@/stores/songs";
+import type { SupabaseCollection } from "@/data/supabase.types";
+import { supabaseSongToSong } from "@/data/utils";
+import { useCollectionsStore } from "@/stores/collections";
+
 import { onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 const props = defineProps<{
-  collectionId?: string;
-  songId?: string;
+  collectionSlug?: string;
+  songSlug?: string;
 }>();
 
 const route = useRoute();
 const router = useRouter();
-const songsStore = useSongsStore();
+const collectionsStore = useCollectionsStore();
 
 // Load collection and song based on route parameters
 onMounted(async () => {
-  // Initialize collections
-  await songsStore.initializeCollections();
+  // Get collections
+  await collectionsStore.getCollections();
 
   // If we have route parameters, use them
-  if (props.collectionId) {
-    await songsStore.changeCollection(props.collectionId);
+  if (props.collectionSlug) {
+    await collectionsStore.selectCollection(props.collectionSlug);
 
-    if (props.songId) {
-      const song = songsStore.getSongById(props.songId);
-      if (song) {
-        songsStore.changeSong(song.id);
-      }
-    } else if (songsStore.songs.length > 0) {
+    if (props.songSlug) {
+      collectionsStore.selectSong(props.songSlug);
+    } else if (collectionsStore.songs?.length > 0) {
       // If no song specified but we have songs, select the first one
-      songsStore.changeSong(songsStore.songs[0].id);
+      collectionsStore.selectSong(collectionsStore.songs[0].slug);
       router.push({
         name: "song",
         params: {
-          collectionId: props.collectionId,
-          songId: songsStore.songs[0].id
+          collectionId: props.collectionSlug,
+          songId: collectionsStore.songs[0].id
         }
       });
     }
-  } else if (songsStore.collections.length > 0) {
+  } else if (collectionsStore.collections.length > 0) {
     // If no collection specified, select the first available one
     const defaultCollection =
-      songsStore.collections.find((c) => c.enabled !== false) || songsStore.collections[0];
+      collectionsStore.collections.find((c: SupabaseCollection) => c.visible !== false) ||
+      collectionsStore.collections[0];
     if (defaultCollection) {
-      await songsStore.changeCollection(defaultCollection.id);
-      if (songsStore.songs.length > 0) {
-        songsStore.changeSong(songsStore.songs[0].id);
+      await collectionsStore.selectCollection(defaultCollection.slug);
+      if (collectionsStore.songs.length > 0) {
+        collectionsStore.selectSong(collectionsStore.songs[0].slug);
         router.push({
           name: "song",
           params: {
             collectionId: defaultCollection.id,
-            songId: songsStore.songs[0].id
+            songId: collectionsStore.songs[0].id
           }
         });
       }
@@ -61,15 +62,15 @@ onMounted(async () => {
 
 // Update the route when collection or song changes
 watch(
-  () => songsStore.currentCollection,
+  () => collectionsStore.selectedCollection,
   (collection) => {
-    if (collection && route.params.collectionId !== collection.id) {
-      if (songsStore.currentSong) {
+    if (collection && route.params.collectionSlug !== collection.slug) {
+      if (collectionsStore.selectedSong) {
         router.push({
           name: "song",
           params: {
-            collectionId: collection.id,
-            songId: songsStore.currentSong.id
+            collectionSlug: collection.slug,
+            songSlug: collectionsStore.selectedSong.slug
           }
         });
       } else {
@@ -80,14 +81,14 @@ watch(
 );
 
 watch(
-  () => songsStore.currentSong,
+  () => collectionsStore.selectedSong,
   (song) => {
-    if (song && songsStore.currentCollection) {
+    if (song && collectionsStore.selectedCollection) {
       router.push({
         name: "song",
         params: {
-          collectionId: songsStore.currentCollection.id,
-          songId: song.id
+          collectionSlug: collectionsStore.selectedCollection.slug,
+          songSlug: song.slug
         }
       });
     }
@@ -97,10 +98,11 @@ watch(
 
 <template>
   <MultitrackPlayer
-    v-if="songsStore.currentCollection && songsStore.currentSong"
-    :collection="songsStore.currentCollection"
-    :song="songsStore.currentSong"
-    :key="songsStore.currentSong.id"
+    v-if="collectionsStore.selectedCollection && collectionsStore.selectedSong"
+    :collection="collectionsStore.selectedCollection"
+    :newCollection="collectionsStore.selectedCollection"
+    :song="supabaseSongToSong(collectionsStore.selectedSong, collectionsStore.audioTracks)"
+    :key="collectionsStore.selectedSong.id"
   />
   <LoadingScreen v-else />
 </template>

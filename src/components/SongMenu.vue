@@ -1,30 +1,30 @@
 <script setup lang="ts">
-import type { Collection } from "@/data/collection.types";
-import { useSongsStore } from "@/stores/songs";
+import type { SupabaseCollection } from "@/data/supabase.types";
+import { useCollectionsStore } from "@/stores/collections";
 import { Menu } from "lucide-vue-next";
 import { computed } from "vue";
 
 const props = defineProps<{
-  collection: Collection;
+  collection: SupabaseCollection;
 }>();
 
-const songsStore = useSongsStore();
+const collectionsStore = useCollectionsStore();
 
 const songMenuItems = computed(() => {
-  return songsStore.songs
-    .filter((song) => song.collectionId === props.collection.id)
-    .map((song) => ({
-      label: song.title,
-      id: song.id
-    }));
+  return collectionsStore.songs.map((song) => ({
+    label: song.title,
+    id: song.slug
+  }));
 });
 
 const otherCollectionMenuItems = computed(() => {
-  return songsStore.collections
-    .filter((collection) => collection.id !== props.collection.id && collection.enabled !== false)
+  return collectionsStore.collections
+    .filter(
+      (collection) => collection.slug !== props.collection.slug && collection.visible !== false
+    )
     .map((collection) => ({
       label: collection.title,
-      id: collection.id
+      id: collection.slug
     }));
 });
 </script>
@@ -53,9 +53,9 @@ const otherCollectionMenuItems = computed(() => {
                   <a
                     v-for="song in songMenuItems"
                     :key="song.label"
-                    @click="songsStore.changeSong(song.id)"
+                    @click="collectionsStore.selectSong(song.id)"
                     :class="{
-                      'menu-focus': songsStore.currentSong?.id === song.id
+                      'menu-focus': collectionsStore.selectedSong?.slug === song.id
                     }"
                   >
                     {{ song.label }}
@@ -72,9 +72,9 @@ const otherCollectionMenuItems = computed(() => {
                   <a
                     v-for="collection in otherCollectionMenuItems"
                     :key="collection.label"
-                    @click="songsStore.changeCollection(collection.id)"
+                    @click="collectionsStore.selectCollection(collection.id)"
                     :class="{
-                      'btn-active': songsStore.currentCollection?.id === collection.id
+                      'btn-active': collectionsStore.selectedCollection?.slug === collection.id
                     }"
                   >
                     {{ collection.label }}

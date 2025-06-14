@@ -8,12 +8,13 @@ import PlayerHeader from "@/components/PlayerHeader.vue";
 import TimeCopier from "@/components/TimeCopier.vue";
 import TrackPlayer from "@/components/TrackPlayer.vue";
 import { useMediaSession } from "@/composables/useMediaSession";
-import type { Collection } from "@/data/collection.types";
 import type { Song } from "@/data/song.types";
+import type { SupabaseCollection } from "@/data/supabase.types";
+import { supabaseCollectionToCollection } from "@/data/utils";
 import { wcagContrast } from "culori";
 
 const props = defineProps<{
-  collection: Collection;
+  collection: SupabaseCollection;
   song: Song;
 }>();
 
@@ -74,15 +75,11 @@ const areTrackPlayersVisible = ref(true);
 
 const colorVariables = computed(() => {
   try {
-    const primaryColor = props.collection.theme.mainColor;
-    const rootStyle = getComputedStyle(document.documentElement);
-    const primaryColorValue = rootStyle.getPropertyValue(`--color-${primaryColor}-500`).trim();
+    const primaryColor = props.collection.main_color;
     const primaryColorContentValue =
-      wcagContrast(primaryColorValue, "white") > wcagContrast(primaryColorValue, "black")
-        ? "white"
-        : "black";
+      wcagContrast(primaryColor, "white") > wcagContrast(primaryColor, "black") ? "white" : "black";
     return {
-      "--color-primary": primaryColorValue,
+      "--color-primary": primaryColor,
       "--color-primary-content": primaryColorContentValue
     };
   } catch {
@@ -112,9 +109,9 @@ const isReady = computed(() => state.trackStates.value.every((track) => track.is
 // Setup Media Session
 const mediaSessionOptions = computed(() => ({
   title: props.song.title,
-  artist: props.collection.artist || props.song.artist || "",
+  artist: props.song.artist || "",
   album: props.collection.title,
-  artwork: props.collection.artwork || props.song.artwork,
+  artwork: props.song.artwork || "",
   duration: state.totalDuration.value
 }));
 
@@ -337,7 +334,7 @@ onUnmounted(() => {
         :lyrics="song.lyrics"
         :currentTime="state.currentTime.value"
         :isDisabled="!isReady"
-        :collection="collection"
+        :collection="supabaseCollectionToCollection(collection)"
         :tracks="lyricTracks"
         @seek="onSeekToTime"
       />
@@ -350,6 +347,7 @@ onUnmounted(() => {
     >
       <div class="h-full overflow-hidden transition-all duration-300">
         <div class="h-full overflow-y-auto p-3">
+          {{ props.song }}
           <TrackPlayer
             v-for="(track, index) in song.tracks"
             :key="index"
