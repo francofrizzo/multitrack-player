@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { SupabaseCollection } from "@/data/supabase.types";
+import type { Collection } from "@/data/data.types";
 import { useCollectionsStore } from "@/stores/collections";
 import { Menu } from "lucide-vue-next";
 import { computed } from "vue";
 
 const props = defineProps<{
-  collection: SupabaseCollection;
+  collection: Collection;
 }>();
 
 const collectionsStore = useCollectionsStore();

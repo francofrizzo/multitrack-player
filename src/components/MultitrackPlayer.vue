@@ -8,36 +8,27 @@ import PlayerHeader from "@/components/PlayerHeader.vue";
 import TimeCopier from "@/components/TimeCopier.vue";
 import TrackPlayer from "@/components/TrackPlayer.vue";
 import { useMediaSession } from "@/composables/useMediaSession";
-import type { Song } from "@/data/song.types";
-import type { SupabaseCollection } from "@/data/supabase.types";
-import { supabaseCollectionToCollection } from "@/data/utils";
-import { wcagContrast } from "culori";
+import type { Collection, Song } from "@/data/data.types";
+import { selectMostContrasting } from "@/utils/utils";
 
 const props = defineProps<{
-  collection: SupabaseCollection;
+  collection: Collection;
   song: Song;
 }>();
 
-const getTrackColor = (index: number) => {
-  const { trackColors } = props.collection.theme;
-  if (Array.isArray(trackColors)) {
-    return trackColors[index % trackColors.length];
-  }
-  return trackColors[props.song.tracks[index].id] || "primary";
-};
-
-const getLyricTracks = () => {
-  const tracks = new Set<string>();
-  props.song.lyrics.forEach((lyricGroup) => {
-    lyricGroup.forEach((item) => {
+// General state
+const tracksIdsWithLyrics = () => {
+  const tracks = new Set<number>();
+  props.song.lyrics.forEach((stanza) => {
+    stanza.forEach((item) => {
       if (Array.isArray(item)) {
-        item.forEach((lyricColumn) => {
-          lyricColumn.forEach((lyric) => {
-            lyric.tracks?.forEach((trackId) => tracks.add(trackId));
+        item.forEach((column) => {
+          column.forEach((verse) => {
+            verse.audio_track_ids?.forEach((trackId) => tracks.add(trackId));
           });
         });
       } else {
-        item.tracks?.forEach((trackId) => tracks.add(trackId));
+        item.audio_track_ids?.forEach((trackId) => tracks.add(trackId));
       }
     });
   });
@@ -49,142 +40,22 @@ const state = {
   lastSeekTime: ref<number>(0),
   totalDuration: ref<number>(0),
   playing: ref(false),
-  trackStates: ref<{ isReady: boolean; volume: number }[]>(
-    props.song.tracks.map(() => ({ isReady: false, volume: 1 }))
+  trackStates: ref(
+    props.song.audio_tracks.map((track) => ({
+      id: track.id,
+      isReady: false,
+      volume: 1,
+      hasLyrics: tracksIdsWithLyrics().includes(track.id),
+      lyricsEnabled: false
+    }))
   )
 };
-
-const lyricTracks = ref<Record<string, boolean>>(
-  getLyricTracks().reduce(
-    (acc, id) => {
-      acc[id] = true;
-      return acc;
-    },
-    {} as Record<string, boolean>
-  )
-);
-
-const trackPlayers = ref<any[]>([]);
-const syncInterval = ref<number | null>(null);
-const SYNC_CHECK_INTERVAL = 1000;
-const DRIFT_THRESHOLD = 0.05;
-const hasInitializedAudio = ref(false);
-const silentAudio = ref<HTMLAudioElement | null>(null);
-
-const areTrackPlayersVisible = ref(true);
-
-const colorVariables = computed(() => {
-  try {
-    const primaryColor = props.collection.main_color;
-    const primaryColorContentValue =
-      wcagContrast(primaryColor, "white") > wcagContrast(primaryColor, "black") ? "white" : "black";
-    return {
-      "--color-primary": primaryColor,
-      "--color-primary-content": primaryColorContentValue
-    };
-  } catch {
-    return {};
-  }
-});
-
-const initializeAudioContext = () => {
-  // Only run once
-  if (hasInitializedAudio.value) {
-    return Promise.resolve();
-  }
-
-  // Create silent audio element to unlock audio context on user interaction
-  // This is needed for WebAudio API which requires user gesture to start playing
-  silentAudio.value = new Audio();
-  // Use a very short mp3 data URI
-  silentAudio.value.src =
-    "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAQABAQEBAQEBAQEBAQEBAQEBAQEB";
-  silentAudio.value.load();
-  hasInitializedAudio.value = true;
-  return Promise.resolve();
-};
-
 const isReady = computed(() => state.trackStates.value.every((track) => track.isReady));
-
-// Setup Media Session
-const mediaSessionOptions = computed(() => ({
-  title: props.song.title,
-  artist: props.song.artist || "",
-  album: props.collection.title,
-  artwork: props.song.artwork || "",
-  duration: state.totalDuration.value
-}));
-
-const {
-  currentTime: mediaSessionTime,
-  isPlaying: mediaSessionPlaying,
-  initMediaSession,
-  cleanupMediaSession
-} = useMediaSession(mediaSessionOptions, {
-  onPlay: () => onPlayPause(true),
-  onPause: () => onPlayPause(false),
-  onSeek: (time) => onSeekToTime(time)
+const trackIdsWithLyricsEnabled = computed(() => {
+  return state.trackStates.value.filter((track) => track.lyricsEnabled).map((track) => track.id);
 });
 
-// Sync media session with player state
-watch(
-  () => state.currentTime.value,
-  (time) => {
-    mediaSessionTime.value = time;
-  }
-);
-
-watch(
-  () => state.playing.value,
-  (playing) => {
-    mediaSessionPlaying.value = playing;
-  }
-);
-
-// Listen to media session controls
-watch(mediaSessionPlaying, (playing) => {
-  if (playing !== state.playing.value) {
-    state.playing.value = playing;
-  }
-});
-
-watch(mediaSessionTime, (time) => {
-  if (Math.abs(time - state.currentTime.value) > 0.1) {
-    seekAllTracks(time);
-  }
-});
-
-const checkAndCorrectSync = () => {
-  if (!state.playing.value || !isReady.value) return;
-
-  const referenceTrack = trackPlayers.value[0];
-  const referenceTime = referenceTrack?.waveSurfer?.getCurrentTime?.() ?? 0;
-
-  for (let i = 1; i < trackPlayers.value.length; i++) {
-    const player = trackPlayers.value[i];
-    const time = player?.waveSurfer?.getCurrentTime?.() ?? 0;
-    const drift = time - referenceTime;
-
-    if (Math.abs(drift) > DRIFT_THRESHOLD) {
-      player.seekTo(referenceTime);
-    }
-  }
-
-  state.currentTime.value = referenceTime;
-};
-
-const startSyncCheck = () => {
-  stopSyncCheck();
-  syncInterval.value = window.setInterval(checkAndCorrectSync, SYNC_CHECK_INTERVAL);
-};
-
-const stopSyncCheck = () => {
-  if (syncInterval.value) {
-    window.clearInterval(syncInterval.value);
-    syncInterval.value = null;
-  }
-};
-
+// Interactivity
 const seekAllTracks = (time: number) => {
   trackPlayers.value.forEach((player) => {
     if (player) {
@@ -195,7 +66,7 @@ const seekAllTracks = (time: number) => {
 };
 
 const onReady = (trackIndex: number, duration: number) => {
-  state.trackStates.value[trackIndex].isReady = true;
+  state.trackStates.value[trackIndex]!.isReady = true;
   if (trackIndex === 0) {
     state.totalDuration.value = duration;
   }
@@ -215,20 +86,20 @@ const onFinish = (trackIndex: number) => {
 
 const onVolumeChange = (trackIndex: number, volume: number) => {
   const clampedVolume = Math.max(0, Math.min(1, volume));
-  state.trackStates.value[trackIndex].volume = clampedVolume;
-  if (state.trackStates.value[trackIndex].volume > 0) {
-    onSetTrackLyricsEnabled(props.song.tracks[trackIndex]?.id, true);
+  state.trackStates.value[trackIndex]!.volume = clampedVolume;
+  if (state.trackStates.value[trackIndex]!.volume > 0) {
+    onSetTrackLyricsEnabled(props.song.audio_tracks[trackIndex]!.id, true);
   } else {
-    onSetTrackLyricsEnabled(props.song.tracks[trackIndex]?.id, false);
+    onSetTrackLyricsEnabled(props.song.audio_tracks[trackIndex]!.id, false);
   }
 };
 
 const onToggleTrackMuted = (trackIndex: number, toggleLyrics: boolean) => {
-  const shouldBeEnabled = state.trackStates.value[trackIndex].volume === 0;
+  const shouldBeEnabled = state.trackStates.value[trackIndex]!.volume === 0;
   const newVolume = shouldBeEnabled ? 1 : 0;
   onVolumeChange(trackIndex, newVolume);
   if (toggleLyrics) {
-    onSetTrackLyricsEnabled(props.song.tracks[trackIndex]?.id, shouldBeEnabled);
+    onSetTrackLyricsEnabled(props.song.audio_tracks[trackIndex]!.id, shouldBeEnabled);
   }
 };
 
@@ -242,19 +113,21 @@ const onSoloTrack = (index: number, toggleLyrics: boolean) => {
     const newVolume = shouldBeEnabled ? 1 : 0;
     onVolumeChange(i, newVolume);
     if (toggleLyrics) {
-      onSetTrackLyricsEnabled(props.song.tracks[i]?.id, shouldBeEnabled);
+      onSetTrackLyricsEnabled(props.song.audio_tracks[i]!.id, shouldBeEnabled);
     }
   });
 };
 
-const onSetTrackLyricsEnabled = (trackId: string, newState: boolean) => {
-  if (trackId in lyricTracks.value) {
-    lyricTracks.value[trackId] = newState;
-  }
+const onSetTrackLyricsEnabled = (trackId: number, newState: boolean) => {
+  const trackIndex = props.song.audio_tracks.findIndex((track) => track.id === trackId);
+  if (trackIndex === -1) return;
+  state.trackStates.value[trackIndex]!.lyricsEnabled = newState;
 };
 
-const onToggleTrackLyrics = (trackId: string) => {
-  onSetTrackLyricsEnabled(trackId, !lyricTracks.value[trackId]);
+const onToggleTrackLyrics = (trackId: number) => {
+  const trackIndex = props.song.audio_tracks.findIndex((track) => track.id === trackId);
+  if (trackIndex === -1) return;
+  onSetTrackLyricsEnabled(trackId, !state.trackStates.value[trackIndex]!.lyricsEnabled);
 };
 
 const onPlayPause = async (forcePlay?: boolean) => {
@@ -285,7 +158,84 @@ const keydownHandler = (event: KeyboardEvent) => {
   }
 };
 
-// Update playback state when playing state changes
+onMounted(() => {
+  window.addEventListener("keydown", keydownHandler);
+  initMediaSession();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", keydownHandler);
+  stopSyncCheck();
+  cleanupMediaSession();
+});
+
+// UI/Visual related state
+const tracksExpanded = ref(true);
+
+const colorVariables = computed(() => {
+  try {
+    const primaryColor = props.collection.main_color;
+    const primaryColorContentValue = selectMostContrasting(primaryColor, ["white", "black"]);
+    return {
+      "--color-primary": primaryColor,
+      "--color-primary-content": primaryColorContentValue
+    };
+  } catch {
+    return {};
+  }
+});
+
+// Audio playing trickery
+const trackPlayers = ref<InstanceType<typeof TrackPlayer>[]>([]);
+const syncInterval = ref<number | null>(null);
+const SYNC_CHECK_INTERVAL = 1000;
+const DRIFT_THRESHOLD = 0.05;
+const hasInitializedAudio = ref(false);
+const silentAudio = ref<HTMLAudioElement | null>(null);
+
+const initializeAudioContext = () => {
+  // Only run once
+  if (hasInitializedAudio.value) {
+    return Promise.resolve();
+  }
+
+  // Create silent audio element to unlock audio context on user interaction
+  // This is needed for WebAudio API which requires user gesture to start playing
+  silentAudio.value = new Audio();
+  // Use a very short mp3 data URI
+  silentAudio.value.src =
+    "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAQABAQEBAQEBAQEBAQEBAQEBAQEB";
+  silentAudio.value.load();
+  hasInitializedAudio.value = true;
+  return Promise.resolve();
+};
+
+const checkAndCorrectSync = () => {
+  if (!state.playing.value || !isReady.value) return;
+  const referenceTrack = trackPlayers.value[0];
+  const referenceTime = referenceTrack?.waveSurfer?.getCurrentTime?.() ?? 0;
+  trackPlayers.value.forEach((player) => {
+    const time = player.waveSurfer?.getCurrentTime?.() ?? 0;
+    const drift = time - referenceTime;
+    if (Math.abs(drift) > DRIFT_THRESHOLD) {
+      player.seekTo(referenceTime);
+    }
+  });
+  state.currentTime.value = referenceTime;
+};
+
+const startSyncCheck = () => {
+  stopSyncCheck();
+  syncInterval.value = window.setInterval(checkAndCorrectSync, SYNC_CHECK_INTERVAL);
+};
+
+const stopSyncCheck = () => {
+  if (syncInterval.value) {
+    window.clearInterval(syncInterval.value);
+    syncInterval.value = null;
+  }
+};
+
 watch(
   () => state.playing.value,
   (isPlaying) => {
@@ -297,15 +247,47 @@ watch(
   }
 );
 
-onMounted(() => {
-  window.addEventListener("keydown", keydownHandler);
-  initMediaSession();
+// MediaSession
+const mediaSessionOptions = computed(() => ({
+  title: props.song.title,
+  artist: "",
+  album: props.collection.title,
+  artwork: props.collection.artwork_file_url || "",
+  duration: state.totalDuration.value
+}));
+
+const {
+  currentTime: mediaSessionTime,
+  isPlaying: mediaSessionPlaying,
+  initMediaSession,
+  cleanupMediaSession
+} = useMediaSession(mediaSessionOptions, {
+  onPlay: () => onPlayPause(true),
+  onPause: () => onPlayPause(false),
+  onSeek: (time) => onSeekToTime(time)
 });
 
-onUnmounted(() => {
-  window.removeEventListener("keydown", keydownHandler);
-  stopSyncCheck();
-  cleanupMediaSession();
+watch(
+  () => state.currentTime.value,
+  (time) => {
+    mediaSessionTime.value = time;
+  }
+);
+watch(
+  () => state.playing.value,
+  (playing) => {
+    mediaSessionPlaying.value = playing;
+  }
+);
+watch(mediaSessionPlaying, (playing) => {
+  if (playing !== state.playing.value) {
+    state.playing.value = playing;
+  }
+});
+watch(mediaSessionTime, (time) => {
+  if (Math.abs(time - state.currentTime.value) > 0.1) {
+    seekAllTracks(time);
+  }
 });
 </script>
 
@@ -334,8 +316,8 @@ onUnmounted(() => {
         :lyrics="song.lyrics"
         :currentTime="state.currentTime.value"
         :isDisabled="!isReady"
-        :collection="supabaseCollectionToCollection(collection)"
-        :tracks="lyricTracks"
+        :collection="collection"
+        :enabledTrackIds="trackIdsWithLyricsEnabled"
         @seek="onSeekToTime"
       />
       <div class="bg-gradient-to-t from-base-200 to-transparent sticky inset-x-0 bottom-0 h-8" />
@@ -343,22 +325,21 @@ onUnmounted(() => {
 
     <div
       class="relative border-t md:border border-base-300 md:rounded-box bg-base-100 shadow-sm transition-[max-height] duration-300"
-      :class="{ 'max-h-[45%]': areTrackPlayersVisible, 'max-h-2': !areTrackPlayersVisible }"
+      :class="{ 'max-h-[45%]': tracksExpanded, 'max-h-2': !tracksExpanded }"
     >
       <div class="h-full overflow-hidden transition-all duration-300">
         <div class="h-full overflow-y-auto p-3">
-          {{ props.song }}
           <TrackPlayer
             v-for="(track, index) in song.tracks"
             :key="index"
             :track="track"
-            :color="getTrackColor(index)"
+            :collection="collection"
+            :isPlaying="state.playing.value"
             :isReady="state.trackStates.value[index].isReady"
             :volume="state.trackStates.value[index].volume"
-            :isPlaying="state.playing.value"
-            :hasLyrics="lyricTracks[track.id] !== undefined"
-            :hasLyricsEnabled="lyricTracks[track.id] ?? false"
-            :ref="(el) => (trackPlayers[index] = el)"
+            :hasLyrics="state.trackStates.value[index].hasLyrics"
+            :lyricsEnabled="state.trackStates.value[index].lyricsEnabled"
+            :ref="(el: InstanceType<typeof TrackPlayer>) => (trackPlayers[index] = el)"
             @ready="(duration: number) => onReady(index, duration)"
             @time-update="(time: number) => onTimeUpdate(index, time)"
             @volume-change="(volume: number) => onVolumeChange(index, volume)"
@@ -376,11 +357,11 @@ onUnmounted(() => {
       >
         <button
           class="p-2 pointer-events-auto bg-base-100 text-base-content/50 rounded-t-box w-16 flex items-center justify-center border-t border-r border-l border-base-300 cursor-pointer"
-          @click="areTrackPlayersVisible = !areTrackPlayersVisible"
+          @click="tracksExpanded = !tracksExpanded"
         >
           <ChevronDown
             class="w-7 h-7 transition-transform duration-300"
-            :class="{ 'rotate-180': !areTrackPlayersVisible }"
+            :class="{ 'rotate-180': !tracksExpanded }"
           />
         </button>
       </div>

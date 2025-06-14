@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Track } from "@/data/song.types";
+import type { AudioTrack, Collection } from "@/data/data.types";
+import { darken, lighten } from "@/utils/utils";
 import { WaveSurferPlayer } from "@meersagor/wavesurfer-vue";
 import { MicVocal, Volume2Icon, VolumeX } from "lucide-vue-next";
 import type { PartialWaveSurferOptions } from "node_modules/@meersagor/wavesurfer-vue/dist/types/types";
@@ -7,13 +8,13 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type WaveSurfer from "wavesurfer.js";
 
 const props = defineProps<{
-  track: Track;
-  color: string;
+  collection: Collection;
+  track: AudioTrack;
   volume: number;
   isReady: boolean;
   isPlaying: boolean;
   hasLyrics: boolean;
-  hasLyricsEnabled: boolean;
+  lyricsEnabled: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,11 +32,11 @@ const emit = defineEmits<{
 const waveSurfer = ref<WaveSurfer | null>(null);
 const isCtrlPressed = ref(false);
 const isShiftPressed = ref(false);
-const isMuted = computed(() => props.volume === 0);
 const muteButtonLongPressTimer = ref<number | null>(null);
 const isMuteButtonLongPressActive = ref(false);
 const TOUCH_DURATION = 500; // 500ms for long press
 const isMac = navigator.userAgent.indexOf("Mac") > 0;
+const isMuted = computed(() => props.volume === 0);
 
 // Methods
 const seekTo = (time: number) => {
@@ -44,7 +45,7 @@ const seekTo = (time: number) => {
 };
 
 const handleVolumeChange = (value: number | number[]) => {
-  const newVolume = Array.isArray(value) ? value[0] : value;
+  const newVolume = Array.isArray(value) ? value[0] ?? 0 : value;
   const clampedVolume = Math.max(0, Math.min(1, newVolume));
   if (waveSurfer.value) {
     waveSurfer.value.setVolume(clampedVolume);
@@ -53,28 +54,24 @@ const handleVolumeChange = (value: number | number[]) => {
 };
 
 defineExpose({
+  waveSurfer,
   seekTo
+});
+
+const color = computed(() => {
+  return isMuted.value
+    ? "var(--color-zinc-500)"
+    : props.collection.track_colors[props.track.color_key] ?? props.collection.main_color;
 });
 
 const waveSurferColorScheme = computed(() => {
   const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const color = isMuted.value ? "zinc" : props.color;
-
-  const rootStyle = getComputedStyle(document.documentElement);
-  const waveColorValue = rootStyle
-    .getPropertyValue(`--color-${color}-${isDarkMode ? "600" : "400"}`)
-    .trim();
-  const progressColorValue = rootStyle
-    .getPropertyValue(`--color-${color}-${isDarkMode ? "500" : "600"}`)
-    .trim();
-
   return {
-    waveColor: waveColorValue || `var(--color-${color}-600)`,
-    progressColor: progressColorValue || `var(--color-${color}-500)`
+    waveColor: isDarkMode ? darken(color.value, 0.2) : lighten(color.value, 0.2),
+    progressColor: color.value
   };
 });
 
-// WaveSurfer Configuration
 const waveSurferOptions = computed<PartialWaveSurferOptions>(() => {
   return {
     height: 60,
@@ -83,7 +80,7 @@ const waveSurferOptions = computed<PartialWaveSurferOptions>(() => {
     barRadius: 8,
     dragToSeek: true,
     backend: "WebAudio",
-    url: props.track.file,
+    url: props.track.audio_file_url,
     ...waveSurferColorScheme.value
   };
 });
@@ -213,9 +210,11 @@ onUnmounted(() => {
           min="0"
           max="1"
           step="0.01"
-          :class="`range range-xs text-${isMuted ? 'zinc' : props.color}-500`"
+          :style="{ color }"
+          class="range range-xs"
           @input="
-            (event) => handleVolumeChange(parseFloat((event.target as HTMLInputElement).value))
+            (event: Event) =>
+              handleVolumeChange(parseFloat((event.target as HTMLInputElement).value))
           "
         />
       </div>
