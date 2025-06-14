@@ -46,7 +46,7 @@ const state = {
       isReady: false,
       volume: 1,
       hasLyrics: tracksIdsWithLyrics().includes(track.id),
-      lyricsEnabled: false
+      lyricsEnabled: true
     }))
   )
 };
@@ -330,7 +330,7 @@ watch(mediaSessionTime, (time) => {
       <div class="h-full overflow-hidden transition-all duration-300">
         <div class="h-full overflow-y-auto p-3">
           <TrackPlayer
-            v-for="(track, index) in song.tracks"
+            v-for="(track, index) in song.audio_tracks"
             :key="index"
             :track="track"
             :collection="collection"
@@ -343,10 +343,10 @@ watch(mediaSessionTime, (time) => {
             @ready="(duration: number) => onReady(index, duration)"
             @time-update="(time: number) => onTimeUpdate(index, time)"
             @volume-change="(volume: number) => onVolumeChange(index, volume)"
-            @toggle-track-muted="(toggleLyrics: boolean) => onToggleTrackMuted(index, toggleLyrics)"
-            @toggle-track-solo="(toggleLyrics: boolean) => onSoloTrack(index, toggleLyrics)"
+            @toggle-muted="(toggleLyrics: boolean) => onToggleTrackMuted(index, toggleLyrics)"
+            @toggle-solo="(toggleLyrics: boolean) => onSoloTrack(index, toggleLyrics)"
             @toggle-lyrics="() => onToggleTrackLyrics(track.id)"
-            @seek-to-time="onSeekToTime"
+            @seek="onSeekToTime"
             @finish="onFinish(index)"
           />
         </div>
@@ -368,7 +368,7 @@ watch(mediaSessionTime, (time) => {
 
       <div
         v-if="!isReady"
-        class="absolute inset-0 z-10 bg-base-100 rounded-box opacity-80 flex gap-4 text-lg items-center justify-center text-base-content/50"
+        class="absolute inset-0 z-10 bg-base-100 rounded-box opacity-80 flex gap-4 text-lg items-center justify-center text-base-content/50 select-none"
       >
         <Loader2 class="size-6 animate-spin" />
         <span class="uppercase tracking-wide">Cargando...</span>

@@ -7,7 +7,7 @@ const props = defineProps<{
   lyrics: LyricStanza[];
   currentTime: number;
   isDisabled: boolean;
-  enabledTrackIds: Record<number, boolean>;
+  enabledTrackIds: number[];
 }>();
 
 const emit = defineEmits<{
@@ -19,8 +19,8 @@ type LyricVerseWithStatus = LyricVerse & { end_time: number; status: LyricVerseS
 type LyricStanzaWithStatus = (LyricVerseWithStatus | LyricVerseWithStatus[][])[];
 
 type RegularizedLyricLine = {
-  startTime: number;
-  endTime: number;
+  start_time: number;
+  end_time: number;
   columns: LyricVerseWithStatus[][];
 };
 type RegularizedLyricStanza = RegularizedLyricLine[];
@@ -57,7 +57,7 @@ const getVerseStyles = (lyric: LyricVerseWithStatus) => {
 const isVerseVisible = (verse: LyricVerse) => {
   return (
     !verse.audio_track_ids ||
-    verse.audio_track_ids.some((trackId) => props.enabledTrackIds[trackId] ?? false)
+    verse.audio_track_ids.some((trackId) => props.enabledTrackIds.includes(trackId))
   );
 };
 
@@ -159,8 +159,8 @@ const regularizedLyrics = computed(() =>
         const startTimes = item.flatMap((col) => col.map((verse) => verse.start_time));
         const endTimes = item.flatMap((col) => col.map((verse) => verse.end_time));
         lines.push({
-          startTime: Math.min(...startTimes),
-          endTime: Math.max(...endTimes),
+          start_time: Math.min(...startTimes),
+          end_time: Math.max(...endTimes),
           columns: item
         });
       } else {
@@ -169,17 +169,17 @@ const regularizedLyrics = computed(() =>
           const overlap = calculateOverlap(
             item.start_time,
             item.end_time,
-            previousLine.startTime,
-            previousLine.endTime
+            previousLine.start_time,
+            previousLine.end_time
           );
           if (overlap > OVERLAP_THRESHOLD) {
             previousLine.columns.push([item]);
-            previousLine.endTime = Math.max(previousLine.endTime, item.end_time);
+            previousLine.end_time = Math.max(previousLine.end_time, item.end_time);
           }
         }
         lines.push({
-          startTime: item.start_time,
-          endTime: item.end_time,
+          start_time: item.start_time,
+          end_time: item.end_time,
           columns: [[item]]
         });
       }
@@ -228,7 +228,7 @@ watch(
             v-for="(verse, verseIndex) in column"
             :key="`${stanzaIndex}-${lineIndex}-${columnIndex}-${verseIndex}`"
             class="flex flex-col items-center text-left gap-1.5"
-            @click="() => !isDisabled && verse.startTime && emit('seek', verse.startTime)"
+            @click="() => !isDisabled && verse.start_time && emit('seek', verse.start_time)"
           >
             <span
               v-if="verse.comment"
