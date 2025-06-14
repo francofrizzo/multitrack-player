@@ -17,6 +17,10 @@ const props = defineProps<{
 }>();
 
 // General state
+const sortedTracks = computed(() => {
+  return [...props.song.audio_tracks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+});
+
 const tracksIdsWithLyrics = () => {
   const tracks = new Set<number>();
   props.song.lyrics.forEach((stanza) => {
@@ -41,7 +45,7 @@ const state = {
   totalDuration: ref<number>(0),
   playing: ref(false),
   trackStates: ref(
-    props.song.audio_tracks.map((track) => ({
+    sortedTracks.value.map((track) => ({
       id: track.id,
       isReady: false,
       volume: 1,
@@ -88,9 +92,9 @@ const onVolumeChange = (trackIndex: number, volume: number) => {
   const clampedVolume = Math.max(0, Math.min(1, volume));
   state.trackStates.value[trackIndex]!.volume = clampedVolume;
   if (state.trackStates.value[trackIndex]!.volume > 0) {
-    onSetTrackLyricsEnabled(props.song.audio_tracks[trackIndex]!.id, true);
+    onSetTrackLyricsEnabled(sortedTracks.value[trackIndex]!.id, true);
   } else {
-    onSetTrackLyricsEnabled(props.song.audio_tracks[trackIndex]!.id, false);
+    onSetTrackLyricsEnabled(sortedTracks.value[trackIndex]!.id, false);
   }
 };
 
@@ -99,7 +103,7 @@ const onToggleTrackMuted = (trackIndex: number, toggleLyrics: boolean) => {
   const newVolume = shouldBeEnabled ? 1 : 0;
   onVolumeChange(trackIndex, newVolume);
   if (toggleLyrics) {
-    onSetTrackLyricsEnabled(props.song.audio_tracks[trackIndex]!.id, shouldBeEnabled);
+    onSetTrackLyricsEnabled(sortedTracks.value[trackIndex]!.id, shouldBeEnabled);
   }
 };
 
@@ -113,19 +117,19 @@ const onSoloTrack = (index: number, toggleLyrics: boolean) => {
     const newVolume = shouldBeEnabled ? 1 : 0;
     onVolumeChange(i, newVolume);
     if (toggleLyrics) {
-      onSetTrackLyricsEnabled(props.song.audio_tracks[i]!.id, shouldBeEnabled);
+      onSetTrackLyricsEnabled(sortedTracks.value[i]!.id, shouldBeEnabled);
     }
   });
 };
 
 const onSetTrackLyricsEnabled = (trackId: number, newState: boolean) => {
-  const trackIndex = props.song.audio_tracks.findIndex((track) => track.id === trackId);
+  const trackIndex = sortedTracks.value.findIndex((track) => track.id === trackId);
   if (trackIndex === -1) return;
   state.trackStates.value[trackIndex]!.lyricsEnabled = newState;
 };
 
 const onToggleTrackLyrics = (trackId: number) => {
-  const trackIndex = props.song.audio_tracks.findIndex((track) => track.id === trackId);
+  const trackIndex = sortedTracks.value.findIndex((track) => track.id === trackId);
   if (trackIndex === -1) return;
   onSetTrackLyricsEnabled(trackId, !state.trackStates.value[trackIndex]!.lyricsEnabled);
 };
@@ -330,7 +334,7 @@ watch(mediaSessionTime, (time) => {
       <div class="h-full overflow-hidden transition-all duration-300">
         <div class="h-full overflow-y-auto p-3">
           <TrackPlayer
-            v-for="(track, index) in song.audio_tracks"
+            v-for="(track, index) in sortedTracks"
             :key="index"
             :track="track"
             :collection="collection"

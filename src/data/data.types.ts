@@ -25,6 +25,7 @@ export type AudioTrack = {
   title: string;
   color_key: string;
   audio_file_url: string;
+  order?: number;
   created_at: string;
 };
 
