@@ -1,4 +1,4 @@
-import { clampChroma, formatHex, lch, wcagContrast } from "culori";
+import { clampChroma, formatCss, lch, wcagContrast } from "culori";
 
 export const formatTime = (time: number): string => {
   const [minutes, seconds] = [Math.floor(time / 60), Math.floor(time % 60)];
@@ -8,13 +8,20 @@ export const formatTime = (time: number): string => {
 export const darken = (colorStr: string, amount: number) => {
   const colorLch = lch(colorStr);
   if (!colorLch) return colorStr;
-  return formatHex(clampChroma({ ...colorLch, l: Math.max(0, colorLch.l - amount * 100) }));
+  return formatCss(clampChroma({ ...colorLch, l: Math.max(0, colorLch.l - amount * 100) }));
 };
 
 export const lighten = (colorStr: string, amount: number) => {
   const colorLch = lch(colorStr);
   if (!colorLch) return colorStr;
-  return formatHex(clampChroma({ ...colorLch, l: Math.min(100, colorLch.l + amount * 100) }));
+  return formatCss(clampChroma({ ...colorLch, l: Math.min(100, colorLch.l + amount * 100) }));
+};
+
+export const transparentize = (colorStr: string, amount: number) => {
+  const colorLch = lch(colorStr);
+  if (!colorLch) return colorStr;
+  const currentAlpha = colorLch.alpha ?? 1;
+  return formatCss(clampChroma({ ...colorLch, alpha: Math.max(0, currentAlpha - amount) }));
 };
 
 export const selectMostContrasting = (colorStr: string, choicesStr: string[]) => {
